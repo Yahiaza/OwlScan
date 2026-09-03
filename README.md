@@ -11,7 +11,9 @@ OwlScan is a Windows-first desktop workspace for scanning, Arabic/English OCR, a
 - Draw highlight regions and save them into a new PDF.
 - Create a PDF from PNG/JPEG scans with `pdf-lib`.
 - Scanner discovery and acquisition through a .NET WIA bridge.
+- Direct WIA acquisition without Windows device/settings dialogs; the selected OwlScan device, source, DPI, color, duplex and brightness settings are used.
 - Scan profiles for DPI, color mode, duplex and automatic cleanup preferences.
+- Working page actions for auto-crop, rotate, smart enhancement, background cleanup and deleting the current page.
 - Offline Arabic + English OCR using Tesseract.js and bundled language data.
 - OCR progress, confidence and editable recognized text.
 - Sandboxed Electron renderer with a narrow, typed preload API.
@@ -28,7 +30,7 @@ OwlScan is a Windows-first desktop workspace for scanning, Arabic/English OCR, a
 1. Install the scanner manufacturer's full Windows driver. A print-only driver is not enough; it must include WIA scanning support.
 2. In Windows, open **Settings > Bluetooth & devices > Printers & scanners**, add the device, then verify that it can scan with the Windows Scan app.
 3. Open OwlScan. In the right sidebar, choose the device under **Scanner**, or press the refresh button beside the device list.
-4. Choose the color mode, resolution, paper size, source and scan profile, then press **Start scan**.
+4. Choose the flatbed or ADF source, color mode, resolution, simplex/duplex mode and scan profile, then press **Start scan**.
 5. Review the page, run Arabic/English OCR if needed, add highlights or reorder pages, then press **Save PDF**.
 
 OwlScan discovers WIA scanners that are already installed in Windows. Devices are not paired from inside OwlScan itself.

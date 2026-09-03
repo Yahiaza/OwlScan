@@ -31,7 +31,11 @@ async function findRenderer() {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json`)
       const targets = await response.json()
-      const page = targets.find((target) => target.type === 'page' && target.webSocketDebuggerUrl)
+      const page = targets.find((target) =>
+        target.type === 'page' &&
+        target.webSocketDebuggerUrl &&
+        (target.url?.startsWith('file:') || target.url?.startsWith('http:'))
+      )
       if (page) return page
     } catch {
       // Electron has not opened the debugging endpoint yet.
@@ -55,11 +59,15 @@ function inspectBridge(webSocketUrl) {
         method: 'Runtime.evaluate',
         params: {
           expression: `(async () => {
-            const api = window.owlscan
-            return {
-              hasApi: typeof api === 'object',
-              version: await api?.getVersion(),
-              scanners: await api?.listScanners()
+            try {
+              const api = window.owlscan
+              return {
+                hasApi: typeof api === 'object',
+                version: await api?.getVersion(),
+                scanners: await api?.listScanners()
+              }
+            } catch (error) {
+              return { hasApi: typeof window.owlscan === 'object', error: String(error) }
             }
           })()`,
           awaitPromise: true,
@@ -88,8 +96,14 @@ function inspectBridge(webSocketUrl) {
 }
 
 try {
-  const renderer = await findRenderer()
-  const result = await inspectBridge(renderer.webSocketDebuggerUrl)
+  const deadline = Date.now() + 15_000
+  let result
+  while (Date.now() < deadline) {
+    const renderer = await findRenderer()
+    result = await inspectBridge(renderer.webSocketDebuggerUrl)
+    if (result?.hasApi && result.version && Array.isArray(result.scanners)) break
+    await delay(250)
+  }
   if (!result?.hasApi || !result.version || !Array.isArray(result.scanners)) {
     throw new Error(`Electron bridge is unavailable: ${JSON.stringify(result)}`)
   }

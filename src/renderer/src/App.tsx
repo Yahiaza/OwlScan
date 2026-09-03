@@ -36,11 +36,12 @@ import {
   Upload,
   WandSparkles
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { ScannerDevice } from '../../shared/contracts'
 import { DemoPage } from './components/DemoPage'
 import { PdfStage } from './components/PdfStage'
 import { buildPdf, getPdfPageCount } from './lib/pdfEngine'
+import { isBlankPage, processPageImage, type ImageOperation } from './lib/imageProcessing'
 import type {
   DocumentItem,
   EditTool,
@@ -55,7 +56,8 @@ const defaultSettings: ScanSettings = {
   deviceId: '',
   dpi: 300,
   colorMode: 'color',
-  duplex: true,
+  source: 'flatbed',
+  duplex: false,
   autoDeskew: true,
   removeBlankPages: true,
   runOcr: true,
@@ -107,6 +109,7 @@ function App() {
   const [scanners, setScanners] = useState<ScannerDevice[]>([])
   const [isScanning, setIsScanning] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [isOcrRunning, setIsOcrRunning] = useState(false)
   const [ocrProgress, setOcrProgress] = useState(0)
   const [ocrResults, setOcrResults] = useState<Record<string, OcrPageResult>>({})
@@ -241,11 +244,13 @@ function App() {
         deviceId: scanSettings.deviceId || undefined,
         dpi: scanSettings.dpi,
         colorMode: scanSettings.colorMode,
-        duplex: scanSettings.duplex
+        source: scanSettings.source,
+        duplex: scanSettings.source === 'feeder' && scanSettings.duplex,
+        brightness: scanSettings.brightness
       })
       if (result.canceled) return setToast('تم إلغاء المسح')
       if (!result.file) return showError(result.error ?? 'لم يتم استلام صورة من جهاز المسح')
-      const page: DocumentItem = {
+      let page: DocumentItem = {
         id: makeId('scan'),
         kind: 'image',
         name: result.file.name,
@@ -253,10 +258,18 @@ function App() {
         mimeType: result.file.mimeType,
         rotation: 0
       }
+      if (scanSettings.autoDeskew) {
+        const cropped = await processPageImage(page, null, 'autoCrop')
+        if (cropped.changed) page = { ...page, base64: cropped.base64 }
+      }
+      if (scanSettings.removeBlankPages && await isBlankPage(page)) {
+        setToast('تم تجاهل الصفحة لأنها فارغة')
+        return
+      }
       setItems((current) => [...current, page])
       setSelectedId(page.id)
       setToast('اكتمل المسح بنجاح')
-      if (scanSettings.runOcr) await runOcrFor(page, result.file.base64)
+      if (scanSettings.runOcr && page.base64) await runOcrFor(page, page.base64)
     } catch (error) {
       showError(error instanceof Error ? error.message : 'فشل المسح')
     } finally {
@@ -296,7 +309,7 @@ function App() {
   const changeProfile = (id: string): void => {
     setProfileId(id)
     const profile = profiles.find((item) => item.id === id)
-    if (profile) setScanSettings({ ...profile.settings, deviceId: scanSettings.deviceId })
+    if (profile) setScanSettings({ ...defaultSettings, ...profile.settings, deviceId: scanSettings.deviceId })
   }
 
   const saveProfile = (): void => {
@@ -317,9 +330,55 @@ function App() {
 
   const deleteCurrent = (): void => {
     if (!currentItem) return
+    const nextSelection = items[currentIndex + 1] ?? items[currentIndex - 1]
     setItems((current) => current.filter((item) => item.id !== currentItem.id))
     setHighlights((current) => current.filter((mark) => mark.pageId !== currentItem.id))
+    setOcrResults((current) => {
+      const next = { ...current }
+      delete next[currentItem.id]
+      return next
+    })
+    setSelectedId(nextSelection?.id)
     setToast('تم حذف الصفحة من المستند')
+  }
+
+  const rotateCurrent = (): void => {
+    if (!currentItem) return
+    updateCurrentItem({ rotation: (currentItem.rotation + 90) % 360 })
+    setToast('تم تدوير الصفحة 90 درجة')
+  }
+
+  const processCurrentPage = async (operation: ImageOperation, successMessage: string): Promise<void> => {
+    if (!currentItem) return showError('اختر صفحة أولًا')
+    setIsProcessing(true)
+    setToast('جاري معالجة الصفحة…')
+    try {
+      const result = await processPageImage(currentItem, canvasRef.current, operation)
+      if (!result.changed) {
+        setToast(result.message ?? 'الصفحة لا تحتاج إلى تعديل')
+        return
+      }
+      setItems((current) => current.map((item) => item.id === currentItem.id ? {
+        ...item,
+        kind: 'image',
+        name: item.name.replace(/\.[^.]+$/, '') + '.png',
+        base64: result.base64,
+        mimeType: 'image/png',
+        sourcePage: undefined,
+        rotation: 0
+      } : item))
+      setOcrResults((current) => {
+        const next = { ...current }
+        delete next[currentItem.id]
+        return next
+      })
+      setHighlights((current) => current.filter((mark) => mark.pageId !== currentItem.id))
+      setToast(successMessage)
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'تعذر معالجة الصفحة')
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   const undoHighlight = (): void => {
@@ -385,12 +444,6 @@ function App() {
     setToast('تم تغيير ترتيب الصفحات')
   }
 
-  const pageFilter = useMemo(() => {
-    const brightness = 1 + scanSettings.brightness / 100
-    const color = scanSettings.colorMode === 'gray' ? 'grayscale(1)' : scanSettings.colorMode === 'bw' ? 'grayscale(1) contrast(1.8)' : ''
-    return `${color} brightness(${brightness})`
-  }, [scanSettings.brightness, scanSettings.colorMode])
-
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -422,10 +475,11 @@ function App() {
       <section className="toolbar">
         <div className="toolbar-group">
           {mode === 'scan' && <>
-            <button className="tool-button" type="button"><Crop size={16} />قص تلقائي</button>
-            <button className="tool-button" type="button"><RotateCw size={16} />تدوير</button>
-            <button className="tool-button" type="button"><WandSparkles size={16} />تحسين ذكي</button>
-            <button className="tool-button" type="button"><Sparkles size={16} />تنظيف الخلفية</button>
+            <button className="tool-button" disabled={!currentItem || isProcessing} onClick={() => void processCurrentPage('autoCrop', 'تم قص الحواف تلقائيًا')} type="button"><Crop size={16} />قص تلقائي</button>
+            <button className="tool-button" disabled={!currentItem || isProcessing} onClick={rotateCurrent} type="button"><RotateCw size={16} />تدوير</button>
+            <button className="tool-button" disabled={!currentItem || isProcessing} onClick={() => void processCurrentPage('enhance', 'تم تحسين وضوح الصفحة')} type="button"><WandSparkles size={16} />تحسين ذكي</button>
+            <button className="tool-button" disabled={!currentItem || isProcessing} onClick={() => void processCurrentPage('cleanBackground', 'تم تنظيف خلفية الصفحة')} type="button"><Sparkles size={16} />تنظيف الخلفية</button>
+            <button className="tool-button danger-text" disabled={!currentItem || isProcessing} onClick={deleteCurrent} type="button"><Trash2 size={16} />حذف الصفحة</button>
           </>}
           {mode === 'ocr' && <>
             <button className="tool-button active" type="button"><Languages size={16} />عربي + English</button>
@@ -463,6 +517,12 @@ function App() {
               </div>
             </label>
 
+            <label className="field-label">مصدر الورق
+              <select className="field-control" value={scanSettings.source} onChange={(event) => setScanSettings({ ...scanSettings, source: event.target.value as ScanSettings['source'], duplex: event.target.value === 'feeder' ? scanSettings.duplex : false })}>
+                <option value="flatbed">الزجاج المسطح</option><option value="feeder">المغذي ADF</option>
+              </select>
+            </label>
+
             <div className="grid grid-cols-2 gap-3">
               <label className="field-label">الدقة
                 <select className="field-control" value={scanSettings.dpi} onChange={(event) => setScanSettings({ ...scanSettings, dpi: Number(event.target.value) })}>
@@ -470,7 +530,7 @@ function App() {
                 </select>
               </label>
               <label className="field-label">الأوجه
-                <select className="field-control" value={scanSettings.duplex ? 'duplex' : 'simplex'} onChange={(event) => setScanSettings({ ...scanSettings, duplex: event.target.value === 'duplex' })}>
+                <select className="field-control" disabled={scanSettings.source !== 'feeder'} value={scanSettings.duplex ? 'duplex' : 'simplex'} onChange={(event) => setScanSettings({ ...scanSettings, duplex: event.target.value === 'duplex' })}>
                   <option value="duplex">وجهين</option><option value="simplex">وجه واحد</option>
                 </select>
               </label>
@@ -491,7 +551,7 @@ function App() {
 
             <fieldset className="space-y-3">
               <legend className="field-label mb-2">المعالجة التلقائية</legend>
-              <label className="check-row"><input checked={scanSettings.autoDeskew} onChange={(event) => setScanSettings({ ...scanSettings, autoDeskew: event.target.checked })} type="checkbox" />استقامة الصفحة وقص الحواف</label>
+              <label className="check-row"><input checked={scanSettings.autoDeskew} onChange={(event) => setScanSettings({ ...scanSettings, autoDeskew: event.target.checked })} type="checkbox" />قص الحواف تلقائيًا بعد المسح</label>
               <label className="check-row"><input checked={scanSettings.removeBlankPages} onChange={(event) => setScanSettings({ ...scanSettings, removeBlankPages: event.target.checked })} type="checkbox" />إزالة الصفحات الفارغة</label>
               <label className="check-row"><input checked={scanSettings.runOcr} onChange={(event) => setScanSettings({ ...scanSettings, runOcr: event.target.checked })} type="checkbox" />تشغيل OCR عربي/إنجليزي</label>
             </fieldset>
@@ -551,7 +611,7 @@ function App() {
             </div>
             <div className="info-card"><span>حدد “هايلايت”، ثم اسحب فوق أي جزء من الصفحة. سيتم دمج العلامات عند حفظ النسخة الجديدة.</span></div>
             <div className="grid grid-cols-2 gap-2">
-              <button className="button secondary" disabled={!currentItem} onClick={() => updateCurrentItem({ rotation: ((currentItem?.rotation ?? 0) + 90) % 360 })} type="button"><RotateCw size={16} />تدوير</button>
+              <button className="button secondary" disabled={!currentItem} onClick={rotateCurrent} type="button"><RotateCw size={16} />تدوير</button>
               <button className="button danger" disabled={!currentItem} onClick={deleteCurrent} type="button"><Trash2 size={16} />حذف</button>
             </div>
             <button className="button secondary w-full" disabled={!currentMarks.length} onClick={undoHighlight} type="button"><Undo2 size={16} />حذف آخر هايلايت</button>
@@ -562,7 +622,7 @@ function App() {
         <section className="document-area">
           <div className="document-head">
             <div className="min-w-0"><strong className="truncate">{documentName}</strong><span>{items.length ? `صفحة ${currentIndex + 1} من ${items.length}` : 'أضف مستندًا للبدء'}</span></div>
-            <div className="document-head-actions"><button className="icon-button" aria-label="بحث" type="button"><Search size={16} /></button><button className="icon-button" aria-label="ملء الشاشة" type="button"><Maximize2 size={16} /></button></div>
+            <div className="document-head-actions"><button className="icon-button danger-text" disabled={!currentItem} onClick={deleteCurrent} aria-label="حذف الصفحة الحالية" title="حذف الصفحة الحالية" type="button"><Trash2 size={16} /></button><button className="icon-button" aria-label="بحث" type="button"><Search size={16} /></button><button className="icon-button" aria-label="ملء الشاشة" type="button"><Maximize2 size={16} /></button></div>
           </div>
 
           <div className="canvas-viewport">
@@ -584,7 +644,7 @@ function App() {
                   className="scan-image"
                   draggable={false}
                   src={`data:${currentItem.mimeType};base64,${currentItem.base64}`}
-                  style={{ filter: pageFilter, transform: `rotate(${currentItem.rotation}deg)` }}
+                  style={{ transform: `rotate(${currentItem.rotation}deg)` }}
                 />
               )}
               {currentMarks.map((mark) => <span className="highlight-mark" key={mark.id} style={{ left: `${mark.x * 100}%`, top: `${mark.y * 100}%`, width: `${mark.width * 100}%`, height: `${mark.height * 100}%`, backgroundColor: mark.color }} />)}

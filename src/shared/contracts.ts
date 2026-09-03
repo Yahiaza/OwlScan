@@ -1,4 +1,5 @@
 export type ScanColorMode = 'color' | 'gray' | 'bw'
+export type ScanSource = 'flatbed' | 'feeder'
 
 export interface BinaryFile {
   name: string
@@ -18,7 +19,9 @@ export interface ScanRequest {
   deviceId?: string
   dpi: number
   colorMode: ScanColorMode
+  source: ScanSource
   duplex: boolean
+  brightness: number
 }
 
 export interface ScanResponse {

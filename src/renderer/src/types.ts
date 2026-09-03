@@ -1,4 +1,4 @@
-import type { ScanColorMode } from '../../shared/contracts'
+import type { ScanColorMode, ScanSource } from '../../shared/contracts'
 
 export type WorkspaceMode = 'scan' | 'ocr' | 'edit'
 export type EditTool = 'select' | 'highlight'
@@ -27,6 +27,7 @@ export interface ScanSettings {
   deviceId: string
   dpi: number
   colorMode: ScanColorMode
+  source: ScanSource
   duplex: boolean
   autoDeskew: boolean
   removeBlankPages: boolean

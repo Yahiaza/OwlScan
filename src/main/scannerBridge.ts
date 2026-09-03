@@ -36,7 +36,7 @@ function runScanner<T>(args: string[], timeoutMs = 120_000): Promise<ScannerComm
   }
 
   return new Promise((resolve) => {
-    const child = spawn(executable, args, { windowsHide: false })
+    const child = spawn(executable, args, { windowsHide: true })
     let stdout = ''
     let stderr = ''
     let completed = false
@@ -80,8 +80,12 @@ export async function acquireScan(request: ScanRequest, outputPath: string): Pro
     String(request.dpi),
     '--color',
     request.colorMode,
+    '--source',
+    request.source,
     '--duplex',
-    String(request.duplex)
+    String(request.duplex),
+    '--brightness',
+    String(request.brightness)
   ]
   if (request.deviceId) args.push('--device', request.deviceId)
   return runScanner<{ path: string }>(args)

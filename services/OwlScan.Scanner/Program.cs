@@ -14,8 +14,10 @@ internal static class Program
     private const int WiaIpsCurIntent = 6146;
     private const int WiaIpsXRes = 6147;
     private const int WiaIpsYRes = 6148;
+    private const int WiaIpsBrightness = 6154;
     private const int WiaDpsDocumentHandlingSelect = 3088;
     private const int Feeder = 1;
+    private const int Flatbed = 2;
     private const int Duplex = 4;
     private const string PngFormat = "{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}";
 
@@ -93,25 +95,22 @@ internal static class Program
 
         var dpi = options.TryGetValue("dpi", out var dpiText) && int.TryParse(dpiText, out var parsedDpi) ? parsedDpi : 300;
         var color = options.GetValueOrDefault("color", "color");
+        var source = options.GetValueOrDefault("source", "flatbed");
         var duplex = bool.TryParse(options.GetValueOrDefault("duplex"), out var parsedDuplex) && parsedDuplex;
+        var brightness = options.TryGetValue("brightness", out var brightnessText) && int.TryParse(brightnessText, out var parsedBrightness)
+            ? Math.Clamp(parsedBrightness, -100, 100)
+            : 0;
         var deviceId = options.GetValueOrDefault("device");
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
         if (File.Exists(output)) File.Delete(output);
 
-        try
-        {
-            AcquireDirect(deviceId, output, dpi, color, duplex);
-        }
-        catch
-        {
-            AcquireWithDriverUi(output, color);
-        }
+        AcquireDirect(deviceId, output, dpi, color, source, duplex, brightness);
 
         return Write(new ServiceResponse<ScannerFile>(true, new ScannerFile(Path.GetFullPath(output))));
     }
 
-    private static void AcquireDirect(string? deviceId, string output, int dpi, string color, bool duplex)
+    private static void AcquireDirect(string? deviceId, string output, int dpi, string color, string source, bool duplex, int brightness)
     {
         var managerType = Type.GetTypeFromProgID("WIA.DeviceManager")!;
         dynamic? manager = null;
@@ -135,11 +134,15 @@ internal static class Program
 
             if (selectedInfo is null) throw new InvalidOperationException("No WIA scanner was found.");
             device = selectedInfo.Connect();
-            TryWriteProperty(device.Properties, WiaDpsDocumentHandlingSelect, duplex ? Feeder | Duplex : Feeder);
+            var handlingMode = source.Equals("feeder", StringComparison.OrdinalIgnoreCase)
+                ? Feeder | (duplex ? Duplex : 0)
+                : Flatbed;
+            TryWriteProperty(device.Properties, WiaDpsDocumentHandlingSelect, handlingMode);
             item = device.Items[1];
             TryWriteProperty(item.Properties, WiaIpsCurIntent, IntentFor(color));
             TryWriteProperty(item.Properties, WiaIpsXRes, dpi);
             TryWriteProperty(item.Properties, WiaIpsYRes, dpi);
+            TryWritePercentageProperty(item.Properties, WiaIpsBrightness, brightness);
             image = item.Transfer(PngFormat);
             image.SaveFile(Path.GetFullPath(output));
         }
@@ -150,26 +153,6 @@ internal static class Program
             ReleaseCom(device);
             ReleaseCom(selectedInfo);
             ReleaseCom(manager);
-        }
-    }
-
-    private static void AcquireWithDriverUi(string output, string color)
-    {
-        var dialogType = Type.GetTypeFromProgID("WIA.CommonDialog")
-            ?? throw new InvalidOperationException("WIA scan dialog is unavailable.");
-        dynamic? dialog = null;
-        dynamic? image = null;
-        try
-        {
-            dialog = Activator.CreateInstance(dialogType);
-            image = dialog!.ShowAcquireImage(ScannerDeviceType, IntentFor(color), 0, PngFormat, true, true, false);
-            if (image is null) throw new COMException("Scan canceled.", unchecked((int)0x80210064));
-            image.SaveFile(Path.GetFullPath(output));
-        }
-        finally
-        {
-            ReleaseCom(image);
-            ReleaseCom(dialog);
         }
     }
 
@@ -223,6 +206,32 @@ internal static class Program
         catch (COMException)
         {
             // Some drivers expose a read-only value or do not support the property.
+        }
+    }
+
+    private static void TryWritePercentageProperty(dynamic properties, int propertyId, int percentage)
+    {
+        dynamic? property = null;
+        try
+        {
+            property = properties[propertyId.ToString()];
+            var minimum = Convert.ToInt32(property.SubTypeMin);
+            var maximum = Convert.ToInt32(property.SubTypeMax);
+            var step = Math.Max(1, Convert.ToInt32(property.SubTypeStep));
+            var rawValue = percentage >= 0
+                ? maximum * percentage / 100
+                : -minimum * percentage / 100;
+            rawValue = Math.Clamp(rawValue, minimum, maximum);
+            rawValue = minimum + (int)Math.Round((rawValue - minimum) / (double)step) * step;
+            property.Value = Math.Clamp(rawValue, minimum, maximum);
+        }
+        catch (COMException)
+        {
+            // Brightness is optional and varies between scanner drivers.
+        }
+        finally
+        {
+            ReleaseCom(property);
         }
     }
 

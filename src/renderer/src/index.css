@@ -101,6 +101,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .toolbar-group { gap: 5px; }
 .tool-button { padding: 6px 10px; color: var(--muted); border: 1px solid transparent; background: transparent; }
 .tool-button:hover, .tool-button.active { color: var(--text); background: var(--surface-raised); border-color: var(--border); }
+.danger-text { color: var(--danger); }
 
 .workspace {
   min-height: 0;
