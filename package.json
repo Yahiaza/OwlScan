@@ -1,0 +1,80 @@
+{
+  "name": "owlscan",
+  "version": "0.1.0",
+  "description": "Arabic-first desktop scanning, OCR and PDF workspace",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "author": "Yahiaza",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "tsc --noEmit && electron-vite build",
+    "build:scanner": "dotnet publish services/OwlScan.Scanner/OwlScan.Scanner.csproj -c Release -r win-x64 --self-contained true --nologo",
+    "dist:win": "pnpm build:scanner && pnpm build && electron-builder --win nsis",
+    "postinstall": "node scripts/prepare-tessdata.mjs && electron-builder install-app-deps",
+    "test:ocr": "node scripts/smoke-ocr.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tesseract.js-data/ara": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "lucide-react": "^0.468.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.149",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tesseract.js": "^6.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.13",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^38.1.2",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^4.0.0",
+    "tailwindcss": "^4.1.13",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7"
+  },
+  "build": {
+    "appId": "com.owlscan.desktop",
+    "productName": "OwlScan",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/tesseract.js/**",
+      "node_modules/tesseract.js-core/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/tessdata",
+        "to": "tessdata"
+      },
+      {
+        "from": "services/OwlScan.Scanner/bin/Release/net10.0-windows/win-x64/publish",
+        "to": "scanner"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "OwlScan-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

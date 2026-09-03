@@ -1,0 +1,14 @@
+node_modules/
+.pnpm-store/
+out/
+release/
+dist/
+resources/tessdata/*.traineddata.gz
+services/**/bin/
+services/**/obj/
+*.user
+*.suo
+*.log
+.DS_Store
+Thumbs.db
+.dotnet-home/
