@@ -165,7 +165,7 @@ function App() {
   }, [refreshScanners])
 
   const openPdf = async (): Promise<void> => {
-    if (!window.owlscan) return showError('افتح المشروع داخل تطبيق Electron')
+    if (!window.owlscan) return showError('تعذّر تحميل مكوّنات سطح المكتب. أعد تشغيل OwlScan أو ثبّت أحدث نسخة')
     try {
       const result = await window.owlscan.openPdf()
       if (result.canceled || !result.file) return
@@ -207,7 +207,7 @@ function App() {
   }, [documentName])
 
   const importImages = async (): Promise<void> => {
-    if (!window.owlscan) return showError('افتح المشروع داخل تطبيق Electron')
+    if (!window.owlscan) return showError('تعذّر تحميل مكوّنات سطح المكتب. أعد تشغيل OwlScan أو ثبّت أحدث نسخة')
     try {
       const result = await window.owlscan.openImages()
       if (!result.canceled) appendImages(result.files)
@@ -233,7 +233,7 @@ function App() {
   }, [showError])
 
   const scanPage = async (): Promise<void> => {
-    if (!window.owlscan) return showError('افتح المشروع داخل تطبيق Electron')
+    if (!window.owlscan) return showError('تعذّر تحميل مكوّنات سطح المكتب. أعد تشغيل OwlScan أو ثبّت أحدث نسخة')
     setIsScanning(true)
     setToast('جاري الاتصال بجهاز المسح…')
     try {
@@ -278,7 +278,7 @@ function App() {
 
   const savePdf = async (): Promise<void> => {
     if (!items.length) return showError('افتح PDF أو أضف صفحات أولًا')
-    if (!window.owlscan) return showError('افتح المشروع داخل تطبيق Electron')
+    if (!window.owlscan) return showError('تعذّر تحميل مكوّنات سطح المكتب. أعد تشغيل OwlScan أو ثبّت أحدث نسخة')
     setIsSaving(true)
     setToast('يتم إنشاء ملف PDF…')
     try {

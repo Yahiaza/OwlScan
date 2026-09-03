@@ -23,6 +23,16 @@ OwlScan is a Windows-first desktop workspace for scanning, Arabic/English OCR, a
 - .NET 10 SDK for development. Release installers include the scanner runtime, so end users do not need to install .NET separately.
 - A scanner with a WIA driver for physical scanning.
 
+## Connect and use a scanner
+
+1. Install the scanner manufacturer's full Windows driver. A print-only driver is not enough; it must include WIA scanning support.
+2. In Windows, open **Settings > Bluetooth & devices > Printers & scanners**, add the device, then verify that it can scan with the Windows Scan app.
+3. Open OwlScan. In the right sidebar, choose the device under **Scanner**, or press the refresh button beside the device list.
+4. Choose the color mode, resolution, paper size, source and scan profile, then press **Start scan**.
+5. Review the page, run Arabic/English OCR if needed, add highlights or reorder pages, then press **Save PDF**.
+
+OwlScan discovers WIA scanners that are already installed in Windows. Devices are not paired from inside OwlScan itself.
+
 ## Development
 
 ```powershell
